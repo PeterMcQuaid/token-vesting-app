@@ -4,4 +4,5 @@ use anchor_lang::prelude::*;
 pub struct InitializeEvent {
     pub message: String,
     pub signer: Pubkey,
+    pub mint: Pubkey,
 }
