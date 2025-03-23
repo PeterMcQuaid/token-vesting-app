@@ -1,9 +1,7 @@
 use anchor_lang::prelude::*;
-
 use crate::constants::*;
 use crate::error::*;
 use crate::event::*;
-
 use crate::state::GlobalState;
 
 pub fn check(ctx: &Context<Initialize>) -> Result<()> {
@@ -11,7 +9,7 @@ pub fn check(ctx: &Context<Initialize>) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.signer.key(),
         OWNER,
-        OnlyOwnerError::NotOwner
+        CustomError::NotOwner
     );
     Ok(())
 }
@@ -33,7 +31,7 @@ pub struct Initialize<'info> {
 
 pub fn initialize_global_state(ctx: Context<Initialize>, mint: Pubkey) -> Result<()> {
     let global_state = &mut ctx.accounts.global_state;
-    require!(global_state.initialized == false, InitializeError::AlreadyInitialized);
+    require!(global_state.initialized == false, CustomError::AlreadyInitialized);
     global_state.initialized = true;
     global_state.mint = mint;
     global_state.authority = ctx.accounts.signer.key();
