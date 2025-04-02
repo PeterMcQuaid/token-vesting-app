@@ -18,4 +18,14 @@ pub mod token_vesting_app {
         instructions::initialize::initialize_global_state(ctx, mint)?;
         Ok(())
     }
+
+    pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+        instructions::stake::deposit_sol(ctx, amount)?;
+        Ok(())
+    }
+
+    pub fn unstake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+        instructions::stake::withdraw_sol(ctx, amount)?;
+        Ok(())
+    }
 }

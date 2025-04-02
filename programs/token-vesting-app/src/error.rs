@@ -7,4 +7,18 @@ pub enum CustomError {
     NotOwner,
     #[msg("Global state already initialized!")]
     AlreadyInitialized,
+    #[msg("Global state not initialized!")]
+    NotInitialized,
+    #[msg("User attempting to modify stake balance they do not control!")]
+    NotStakeOwner,
+    #[msg("Invalid amount!")]
+    InvalidAmount,
+    #[msg("Stake amount exceeds maximum allowed!")]
+    MaxStakeExceeded,
+    #[msg("User attempting to withdraw before they have staked")]
+    AttemptedWithdrawBeforeStake,
+    #[msg("Insufficient funds in user stake account to withdraw")]
+    InsufficientFunds,
+    #[msg("Overflow")]
+    CalculationOverflow,
 }

@@ -148,6 +148,12 @@ describe("token-vesting-app", () => {
   });
 
   // ----------------------------------
-  // MODULE: Tests.....
+  // MODULE: Deposit Sol Tests
   // ----------------------------------
+
+  it("Stakes SOL for unprivledged user", async () => {
+
+    
+
+  });
 });
