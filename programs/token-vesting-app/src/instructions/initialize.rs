@@ -19,7 +19,7 @@ pub struct Initialize<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
     #[account(
-        init,
+        init_if_needed,     // Allowed for custom error use (still gated by acccess control and initialize variable check)
         payer = signer,
         space = ANCHOR_DISCRIMINATOR + 8 + 32 + 32,
         seeds = [b"global_state".as_ref()],
