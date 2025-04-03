@@ -89,6 +89,7 @@ describe("token-vesting-app", () => {
     expect(logs).toContain("Program log: Instruction: Initialize");   // Test doesn't actually confirm event log data, just whether correct event was emitted, may amend in the future
   });
 
+
   it("Fails onlyOwner access control with wrong signer", async () => {
     let wrongSigner = anchor.web3.Keypair.generate();
 
@@ -107,8 +108,9 @@ describe("token-vesting-app", () => {
       })
       .signers([wrongSigner])
       .rpc()
-    ).rejects.toThrow(IDL.errors[0].msg);
+    ).rejects.toThrow(IDL.errors[0].msg);   // NotOwner
   });
+
 
   it("Initializes the global state", async () => {
     await vestingProgram.methods
@@ -131,6 +133,7 @@ describe("token-vesting-app", () => {
       expect(globalState.authority).toEqual(keypair.publicKey);
   });
 
+
   it("Reverts when global state already initialized", async () => {
     const tx = new anchor.web3.Transaction();
     const init = await vestingProgram.methods
@@ -144,16 +147,299 @@ describe("token-vesting-app", () => {
     tx.add(init);           // First initialize call
     tx.add(init);           // Second initialize call (will fail in-program)
 
-    await expect(provider.sendAndConfirm(tx, [keypair])).rejects.toThrow(IDL.errors[1].msg);
+    await expect(provider.sendAndConfirm(tx, [keypair])).rejects.toThrow(IDL.errors[1].msg);  // AlreadyInitialized
   });
 
   // ----------------------------------
-  // MODULE: Deposit Sol Tests
+  // MODULE: Stake/unstake Sol Tests
   // ----------------------------------
 
   it("Stakes SOL for unprivledged user", async () => {
+    const stakeAmount = new BN(1e9);
+    let staker = anchor.web3.Keypair.generate();
 
-    
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
 
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    try {     // @dev Example of getting more debug info from failed transactions
+      const tx = await vestingProgram.methods
+        .stake(stakeAmount)
+        .accounts({
+          staker: staker.publicKey,
+        })
+        .signers([staker])
+        .rpc();
+
+      expect(tx.length).toBeGreaterThan(0);  
+    } catch (err) {
+      console.error("❌ Stake transaction failed:", err);
+      throw err; // re-throw to still fail the test
+    }
+
+    // Confirming the stake
+    const [userStakePDA] = PublicKey.findProgramAddressSync( 
+      [staker.publicKey.toBuffer()],
+      vestingProgram.programId,
+    )
+    const userPDAState = await vestingProgram.account.userStake.fetch(userStakePDA);
+    expect(userPDAState.staker).toEqual(staker.publicKey);
+    expect(userPDAState.amount.toNumber()).toEqual(stakeAmount.toNumber());
+  });
+
+
+  it("Stake 0 amount fails", async () => {
+    const stakeAmount = new BN(0);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL     // Still need balance
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    const tx = await expect(vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc()).rejects.toThrow(IDL.errors[4].msg);   // InvalidAmount    
+  });
+
+
+  it("Stake exceeding max allowance amount fails", async () => {
+    const stakeAmount = new BN(1e9 + 1);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL     // Still need balance
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    const tx = await expect(vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc()).rejects.toThrow(IDL.errors[5].msg);   // MaxStakeExceeded    
+  });
+
+
+  it("Stake exceeding max allowance amount fails across multiple deposits", async () => {
+    let stakeAmount = new BN(1e9);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL     // Still need balance
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    // 2 stakes of 1 SOL and 1 lamport
+    const tx = new anchor.web3.Transaction();
+    let stake = await vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .instruction();
+    tx.add(stake); 
+    stakeAmount = new BN(1);
+    stake = await vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .instruction();
+    tx.add(stake);
+
+    await expect(provider.sendAndConfirm(tx, [staker])).rejects.toThrow(IDL.errors[5].msg);  // MaxStakeExceeded  
+  });
+
+
+  it("Confirm 2 stakes updates balance correctly", async () => {
+    let stakeAmount = new BN(2e8);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    // Confirming the stake
+    const [userStakePDA] = PublicKey.findProgramAddressSync( 
+      [staker.publicKey.toBuffer()],
+      vestingProgram.programId,
+    )
+
+    // First deposit of 0.2 SOL
+    await vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc();
+
+    let userPDAState = await vestingProgram.account.userStake.fetch(userStakePDA);
+    expect(userPDAState.amount.toNumber()).toEqual(stakeAmount.toNumber());   // Confirming stake balance is 0.2 SOL
+
+    // Second deposit of 0.2 SOL
+    await vestingProgram.methods
+    .stake(stakeAmount)
+    .accounts({
+      staker: staker.publicKey,
+    })
+    .signers([staker])
+    .rpc();
+
+  userPDAState = await vestingProgram.account.userStake.fetch(userStakePDA);
+  expect(userPDAState.amount.toNumber()).toEqual(stakeAmount.toNumber() * 2); // Confirming stake balance is 0.4 SOL
+  });
+
+  it("Unstake SOL for unprivledged user", async () => {
+    const stakeAmount = new BN(1e9);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    const tx = await vestingProgram.methods
+      .stake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc();
+
+    expect(tx.length).toBeGreaterThan(0);  
+
+    // Confirming the stake
+    const [userStakePDA] = PublicKey.findProgramAddressSync( 
+      [staker.publicKey.toBuffer()],
+      vestingProgram.programId,
+    )
+    let userPDAState = await vestingProgram.account.userStake.fetch(userStakePDA);
+    expect(userPDAState.staker).toEqual(staker.publicKey);
+    expect(userPDAState.amount.toNumber()).toEqual(stakeAmount.toNumber());
+
+    await vestingProgram.methods
+      .unstake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc();
+
+    userPDAState = await vestingProgram.account.userStake.fetch(userStakePDA);
+    expect(userPDAState.staker).toEqual(staker.publicKey);
+    expect(userPDAState.amount.toNumber()).toEqual(0);
+  });
+
+  it("Unstake SOL invalid amount", async () => {
+    const stakeAmount = new BN(0);
+    let staker = anchor.web3.Keypair.generate();
+
+    // Have to initialize global state first
+    await vestingProgram.methods
+      .initialize(dummyMint)
+      .accounts({
+        signer: keypair.publicKey,
+      })
+      .signers([keypair])
+      .rpc();
+
+    // Funding staker
+    await context.setAccount(staker.publicKey, {
+      lamports: 2_000_000_000, // 2 SOL
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    await expect(vestingProgram.methods
+      .unstake(stakeAmount)
+      .accounts({
+        staker: staker.publicKey,
+      })
+      .signers([staker])
+      .rpc()).rejects.toThrow(IDL.errors[4].msg); // InvalidAmount
   });
 });

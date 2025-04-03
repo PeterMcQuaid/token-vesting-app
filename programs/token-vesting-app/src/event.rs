@@ -13,3 +13,10 @@ pub struct StakeEvent {
     pub amount: u64,
     pub total_staked: u64,
 }
+
+#[event]
+pub struct UnstakeEvent {
+    pub staker: Pubkey,
+    pub amount: u64,
+    pub total_staked: u64,
+}

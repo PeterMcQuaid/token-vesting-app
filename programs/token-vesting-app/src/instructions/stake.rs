@@ -90,6 +90,15 @@ pub fn withdraw_sol(ctx: Context<Stake>, amount: u64) -> Result<()> {
         .checked_add(amount)
         .ok_or(CustomError::CalculationOverflow)?;
 
+    user_stake.amount -= amount;
+
+    // Emit event
+    emit!( UnstakeEvent {
+        staker: ctx.accounts.staker.key(),
+        amount: amount,
+        total_staked: user_stake.amount,
+    });
+
     Ok(())
 }
 
